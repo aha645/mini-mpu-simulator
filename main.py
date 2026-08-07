@@ -88,18 +88,37 @@ def avg_mac_time(pattern, filter, repeat):
     return total_ms/repeat
 
 def mode1_run():
-    print("#[1] 필터 입력")
-    filter_a = make_grid_from_input(3,"filter_A")
-    filter_b = make_grid_from_input(3,"filter_B")
+    repeat = 10
+    print(f"#{'-'*40}")
+    print("# [1] 필터 입력")
+    print(f"#{'-'*40}")
+    filter_a = make_grid_from_input(3,"필터 A")
+    filter_b = make_grid_from_input(3,"필터 B")
+
+    print(f"#{'-'*40}")
     print("#[2] 패턴 입력")
-    pattern = make_grid_from_input(3,"pattern")
+    print(f"#{'-'*40}")
+    pattern = make_grid_from_input(3,"패턴")
+
+    print(f"#{'-'*40}")
     print("[3] MAC 결과")
+    print(f"#{'-'*40}")
     score_a = mac_score(pattern, filter_a)
     score_b = mac_score(pattern, filter_b)
-    avg_ms = avg_mac_time(pattern,filter_a,10)
+    avg_ms = avg_mac_time(pattern,filter_a, repeat)
+
     print(f"A점수: {score_a}")
     print(f"B점수: {score_b}")
-    print(f"연산시간")
+    print(f"연산 시간(평균/{repeat}회): {avg_ms:.2f} ms")
+    diff = abs(score_a - score_b)
+    if diff <= EPSILON: # 동일한 경우는 당연히 오차보다 더 작을것이다
+        msg = "판정불가 (|A-B|<1e-9)"
+    else: # 오차값 보다 작거나 같지 않은 경우
+        if score_a > score_b:
+            msg = "A"
+        else:
+            msg = "B"
+    print(f"판정:{msg}")
 
 import json
 def load(path="data.json"):
@@ -123,15 +142,140 @@ def normalize_patterns(data:dict)->dict:
         normalized[key_size]=new_size_val
     return normalized
 
+# size_3, size_5, size_13 순서대로 정렬하기 위한 함수
+def size_number(size_key):
+    return int(size_key.split("_")[1])
 
+from statistics import mean
 def mode2_run():
     data = load()
+    print(f"#{'-'*40}")
     print("#[1] 필터 로드")
-    # normalize filter
+    print(f"#{'-'*40}")
     nor_filters = normalize_filters(data['filters'])
+
+    for key, val in nor_filters.items():
+        filter_names = " ,".join(val.keys())
+        print(f"✔︎{key} 필터 로드 완료({filter_names})")
+
+    print(f"#{'-'*40}")
+    print("#[2] 패턴 분석(라벨 정규화 적용)")
+    print(f"#{'-'*40}")
     nor_patterns = normalize_patterns(data['patterns'])
-    
-    pass
+
+    total_test=0
+    pass_count=0
+    fail_count=0
+    fail_cases=[]
+    #성능분석용 dictionary
+    perf_log = {}
+
+    for p_name,p_data in nor_patterns.items():
+        input_data = p_data["input"]
+        p_expected = p_data['expected']
+
+        # p_name이 "size_3_1"이면 "size_3 추출
+        size_key = "_".join(p_name.split("_")[:2])
+
+        cross_filter = nor_filters[size_key]["Cross"]
+        x_filter = nor_filters[size_key]["X"]
+
+        #MAC점수 계산
+        s_cross = mac_score(input_data, cross_filter)
+        s_x = mac_score(input_data, x_filter)
+
+        # 두 필터에 대한 평균 시간 측정
+        avg_cross_ms = avg_mac_time(input_data, cross_filter, 10)
+        avg_x_ms = avg_mac_time(input_data, x_filter, 10)
+        avg_ms = (avg_cross_ms+avg_x_ms)/2
+
+        row = len(input_data)
+        col = len(input_data[0])
+        if size_key not in perf_log:
+            perf_log[size_key]={
+                "elapsedtimes":[],
+                "op_count":row*col,
+                "shape":f"{row}x{col}"
+            }
+
+        perf_log[size_key]['elapsedtimes'].append(avg_ms)
+
+        print(f"-- {p_name} --")
+        print(f"Cross 점수: {s_cross:.2f}")
+        print(f"{'X 점수':<10}: {s_x:.2f}")
+        j_msg = judge(s_cross,s_x)
+        
+        if j_msg=="UNDECIDED":
+            pass_msg="FAIL(동점규칙)"
+            fail_count +=1
+            fail_cases.append(
+                f"- {p_name}: 동점(UNDECIDED) 처리 규칙에 따라 FAIL"
+            )
+        else:
+            if j_msg==p_expected:
+                pass_msg="PASS"
+                pass_count +=1
+            else:
+                pass_msg="FAIL"
+                fail_count +=1
+                fail_cases.append(
+                    f"- {p_name}: expected={p_expected}, predicted={j_msg}"
+                )
+
+        print(f"판정: {j_msg}|expected: {p_expected}|{pass_msg}")
+
+        total_test += 1
+
+    print("#---------------------------------------")
+    print("# [3] 성능 분석 (평균/10회)")
+    print("#---------------------------------------")
+    print(f"{'크기':<5}{'평균 시간(ms)':>10}{'연산 횟수':>5}")
+    print("-------------------------------------")
+
+
+
+    for size_key in sorted(perf_log.keys(), key=size_number):
+        shape = perf_log[size_key]["shape"]
+        avg_time = mean(perf_log[size_key]["elapsedtimes"])
+        op_count = perf_log[size_key]["op_count"]
+
+    print(f"{shape:<10}{avg_time:>15.3f}{op_count:>12}")
+
+
+    #---------------------------------------
+    # [4] 결과 요약
+    #---------------------------------------
+
+    print()
+    print("#---------------------------------------")
+    print("# [4] 결과 요약")
+    print("#---------------------------------------")
+    print(f"총 테스트: {total_test}개")
+    print(f"통과: {pass_count}개")
+    print(f"실패: {fail_count}개")
+
+    print()
+    print("실패 케이스:")
+
+    if fail_cases:
+        for case in fail_cases:
+            print(case)
+    else:
+        print("- 없음")
+        
+
+
+
+
+
 
 if __name__ == "__main__":
-    mode2_run()
+    print("=== Mini NPU Simulator ===")
+    print("[모드 선택]")
+    print("1. 사용자 입력 (3x3)")
+    print("2. data.json 분석")
+    mode_num = int(input("선택: ").strip())
+    if mode_num == 1:
+        mode1_run()
+    elif mode_num == 2:
+        mode2_run()        
