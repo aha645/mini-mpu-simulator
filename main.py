@@ -1,3 +1,4 @@
+from __future__ import annotations
 EPSILON = 1e-9 # 0.000000001
 def create_grid(n:int, fill=float(0.0)):
     """
@@ -137,8 +138,18 @@ def mode1_run():
         print(f"#{'-'*40}")
         print("#[2] 패턴 입력")
         print(f"#{'-'*40}")
-        pattern = generate_cross_pattern(n)
-        print_grid(pattern, "패턴(자동 생성 Cross)")
+        pattern_input_choice = input(f"패턴 입력 방식 선택 (1: 직접 입력 {n}x{n}, 2: 자동 생성): ").strip()
+        if pattern_input_choice == "2":
+            pattern_shape = input("패턴 모양 선택 (1: Cross, 2: X): ").strip()
+            if pattern_shape == "2":
+                pattern = generate_x_pattern(n)
+                print_grid(pattern, "패턴(자동 생성 X)")
+            else:
+                pattern = generate_cross_pattern(n)
+                print_grid(pattern, "패턴(자동 생성 Cross)")
+        else:
+            pattern = make_grid_from_input(n, "패턴")
+            print_grid(pattern, "패턴")
     else:
         filter_a = make_grid_from_input(3,"필터 A")
         print_grid(filter_a,"필터 A")
@@ -389,8 +400,11 @@ if __name__ == "__main__":
     print("[모드 선택]")
     print("1. 사용자 입력 (3x3)")
     print("2. data.json 분석")
-    mode_num = int(input("선택: ").strip())
-    if mode_num == 1:
-        mode1_run()
-    elif mode_num == 2:
-        mode2_run()        
+    try:
+        mode_num = int(input("선택: ").strip())
+        if mode_num == 1:
+            mode1_run()
+        elif mode_num == 2:
+            mode2_run()    
+    except KeyboardInterrupt:
+        print("프로그램을 종료합니다")    
