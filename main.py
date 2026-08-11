@@ -46,20 +46,20 @@ def normalize_label(raw)->str:
     raise ValueError(f"알수없는라벨")
 
 def try_make_grid_from_input(n:int)->list[list[float]]:
-    rows=[]
-    for _ in range(n):
+    grid = create_grid(n)
+    for row in range(n):
         line = input().strip()
         splited_vals = line.split()
         if len(splited_vals) != n:
             print(f"입력형식오류: 각 줄에 {n}개의 숫자를 공백으로 구분해 입력하세요.")
             return None
         try:
-            # str -> float 형식으로 변환해서 list[float] 형식으로 만듬, rows에추가
-            rows.append([float(t) for t in splited_vals])
+            for col in range(n):
+                set_cell(grid, row, col, float(splited_vals[col]))
         except ValueError:
             print(f"입력형식오류: {splited_vals} -> float으로 변경불가")
             return None
-    return rows
+    return grid
 
 def make_grid_from_input(n:int, label:str)->list[list]:
     """
@@ -87,13 +87,22 @@ def avg_mac_time(pattern, filter, repeat):
         total_ms = total_ms + (end_time-start_time)*1000        
     return total_ms/repeat
 
+def print_grid(grid, label):
+    print(f"{label} 메모리에 저장 완료")
+    n = len(grid) # 행 이 몇개 인지 알 수 있다
+    for row in range(n):
+        values = [str(get_cell(grid,row,col)) for col in range(n)]
+        print(" ".join(values))
+
 def mode1_run():
     repeat = 10
     print(f"#{'-'*40}")
     print("# [1] 필터 입력")
     print(f"#{'-'*40}")
     filter_a = make_grid_from_input(3,"필터 A")
+    print_grid(filter_a,"필터 A")
     filter_b = make_grid_from_input(3,"필터 B")
+    print_grid(filter_b,"필터 B")
 
     print(f"#{'-'*40}")
     print("#[2] 패턴 입력")
@@ -135,10 +144,12 @@ def normalize_patterns(data:dict)->dict:
     normalized = {}
     for key_size,size_val in data.items():
         new_size_val = dict(size_val)
+        raw_expected = size_val.get("expected")
         try:
-            new_size_val['expected']=normalize_label(size_val.get("expected"))
+            new_size_val['expected']=normalize_label(raw_expected)
         except ValueError:
             new_size_val["expected"]=None
+        new_size_val["expected_raw"]=raw_expected # 정규화실패시 원래기록되어있는정보 저장
         normalized[key_size]=new_size_val
     return normalized
 
@@ -146,7 +157,9 @@ def normalize_patterns(data:dict)->dict:
 def size_number(size_key):
     return int(size_key.split("_")[1])
 
-from statistics import mean
+def mean(values:list[float])->float:
+    return sum(values)/len(values)
+
 def mode2_run():
     data = load()
     print(f"#{'-'*40}")
@@ -177,8 +190,30 @@ def mode2_run():
         # p_name이 "size_3_1"이면 "size_3 추출
         size_key = "_".join(p_name.split("_")[:2])
 
+        # size_3 키가 nor_filters에 없는 경우 -> 필터 자체가 없는경우 (데이터/스키마문제)
+        if size_key not in nor_filters:
+            fail_count += 1
+            total_test += 1
+            fail_cases.append(f"- {p_name}: [데이터/스키마] {size_key} 필터를 찾을 수 없음")
+            print(f"-- {p_name} --")
+            print(f"판정: SKIP|expected: {p_expected}|FAIL(데이터/스키마)")
+            continue
+
         cross_filter = nor_filters[size_key]["Cross"]
         x_filter = nor_filters[size_key]["X"]
+
+        # 패턴과 필터의 크기 불일치 (데이터/스키마문제) - cross/x는 서로 독립된 배열이라 각각 검사해야 한다
+        size_mismatch = (
+            len(input_data)!=len(cross_filter) or len(input_data[0])!=len(cross_filter[0])
+            or len(input_data)!=len(x_filter) or len(input_data[0])!=len(x_filter[0])
+        )
+        if size_mismatch:
+            fail_count += 1
+            total_test += 1
+            fail_cases.append(f"- {p_name}: [데이터/스키마] 크기 불일치(패턴 {len(input_data)}x{len(input_data[0])})")
+            print(f"-- {p_name} --")
+            print(f"판정: SKIP|expected: {p_expected}|FAIL(데이터/스키마)")
+            continue
 
         #MAC점수 계산
         s_cross = mac_score(input_data, cross_filter)
@@ -204,33 +239,38 @@ def mode2_run():
         print(f"Cross 점수: {s_cross:.2f}")
         print(f"{'X 점수':<10}: {s_x:.2f}")
         j_msg = judge(s_cross,s_x)
-        
-        if j_msg=="UNDECIDED":
+
+        if p_expected is None:
+            # 라벨 정규화 실패(데이터/스키마 문제)
+            pass_msg = "FAIL(데이터/스키마)"
+            fail_count += 1
+            fail_cases.append(f"- {p_name}: [데이터/스키마] expected 레이블 정규화 실패(raw={p_data['expected_raw']})")
+        elif j_msg=="UNDECIDED":
             pass_msg="FAIL(동점규칙)"
             fail_count +=1
             fail_cases.append(
-                f"- {p_name}: 동점(UNDECIDED) 처리 규칙에 따라 FAIL"
+                f"- {p_name}: [수치비교] 동점(UNDECIDED) 처리 규칙에 따라 FAIL"
             )
         else:
             if j_msg==p_expected:
                 pass_msg="PASS"
                 pass_count +=1
             else:
-                pass_msg="FAIL"
+                pass_msg="FAIL(로직)"
                 fail_count +=1
                 fail_cases.append(
-                    f"- {p_name}: expected={p_expected}, predicted={j_msg}"
+                    f"- {p_name}: [로직] expected={p_expected}, predicted={j_msg}"
                 )
 
         print(f"판정: {j_msg}|expected: {p_expected}|{pass_msg}")
 
         total_test += 1
 
-    print("#---------------------------------------")
+    print(f"#{'-'*40}")
     print("# [3] 성능 분석 (평균/10회)")
-    print("#---------------------------------------")
-    print(f"{'크기':<5}{'평균 시간(ms)':>10}{'연산 횟수':>5}")
-    print("-------------------------------------")
+    print(f"#{'-'*40}")
+    print(f"{'크기':<8}{'평균 시간(ms)':>11}{'연산 횟수':>8}")
+    print(f"#{'-'*40}")
 
 
 
@@ -239,7 +279,7 @@ def mode2_run():
         avg_time = mean(perf_log[size_key]["elapsedtimes"])
         op_count = perf_log[size_key]["op_count"]
 
-    print(f"{shape:<10}{avg_time:>15.3f}{op_count:>12}")
+        print(f"{shape:<10}{avg_time:>15.3f}{op_count:>12}")
 
 
     #---------------------------------------
