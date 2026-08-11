@@ -79,23 +79,34 @@ python main.py
 
 1D 버전은 칸 하나당 인덱싱이 4회(2D: `pattern[row][col]`+`filter[row][col]`)에서 2회(1D: `pattern_flat[i]`+`filter_flat[i]`)로 줄어 모든 크기에서 37~48% 더 빠릅니다. 곱셈·덧셈 비용은 2D/1D 동일하고 인덱싱만 줄어들기 때문에 개선비율은 크기와 무관하게 비슷한 범위를 유지하며, 절약되는 절대 시간은 연산 횟수(N²)만큼 누적되어 크기가 클수록 커집니다.
 
-### 대형 N(1000×1000)에서의 한계와 최적화 우선순위 (참고 분석)
+### 대형 N(1000×1000)에서의 한계 (참고 분석)
 
-data.json 최대 크기(25×25)를 훨씬 넘어서는 N=1001(홀수 제약 유지)에서 실제로 측정해본 결과입니다.
+data.json 최대 크기(25×25)를 훨씬 넘어서는 N=1001(홀수 제약 유지)에서 실측한 결과입니다.
 
-**시간**: 연산 횟수 1,002,001회 기준 2D `mac_score` 1회 125.67ms, 1D `mac_score_flat` 1회 87.90ms(개선율 33.8%). 25×25(625회, 0.0809ms) 기준 O(N²)로 외삽하면 `0.0809 × (1,002,001/625) ≈ 130ms`로, 실측치와 거의 일치해 이 규모에서도 O(N²) 모델이 유효함을 확인했습니다. 다만 `avg_mac_time`은 10회 반복 측정이라 이 크기 하나당 1초 이상 걸리고, 개선율도 소형 N(37~48%)보다 낮아졌는데(33.8%) — 리스트가 CPU 캐시보다 커지면서 메모리 접근 자체가 병목이 되기 시작하는 것으로 보입니다.
+**시간 측정**
 
-**메모리**: `list[float]` 그리드 1개(리스트 컨테이너 + 원소별 float 객체)가 N=1001에서 약 32MB. `pattern`+`cross_filter`+`x_filter`를 동시에 들면 약 96MB, 1D 평탄화본까지 추가하면 더 늘어납니다. 표준 라이브러리인 `array('d')`(원소를 raw C double로 저장, 파이썬 객체 오버헤드 없음)로 바꾸면 그리드 1개당 약 7.65MB로 **약 1/4**로 줄어듭니다.
+| 항목 | 값 |
+|---|---|
+| 2D `mac_score` 1회 | 58.50 ms |
+| 1D `mac_score_flat` 1회 | 54.27 ms |
+| 2D 평균(10회) | 57.15 ms |
+| 1D 평균(10회) | 50.18 ms |
+| 개선율 | 12.2% |
+| 인덱싱 루프 | 52.25 ms |
+| zip/sum | 59.75 ms |
 
-**우선순위**:
-1. **메모리 → `array('d')` 전환**: 대형 N에서 가장 먼저 한계에 부딪히는 게 메모리이고, 표준 라이브러리라 "외부 라이브러리 금지" 제약도 지킵니다.
-2. **이미 구현한 2D→1D 평탄화**: 여전히 유효하지만 초대형 N에서는 개선폭이 줄어듬(캐시 병목). `array`로 메모리 지역성이 좋아지면 이 부분도 같이 개선될 가능성이 있습니다.
-3. **(참고) `zip`+`sum()` 방식**: 명시적 인덱싱 루프보다 약 28% 빠름을 실측했지만(88ms→64ms), 스펙이 "반복문으로 직접 구현"을 요구해서 generator+`sum()`이 이 요건을 충족하는지 애매해 프로덕션 코드에는 반영하지 않았습니다.
-4. 근본적으로 순수 파이썬 반복문의 인터프리터 오버헤드가 한계라, 외부 라이브러리(NumPy 등) 없이는 N이 수천 단위로 커지면 초 단위 지연을 완전히 피하기는 어렵습니다.
+연산 횟수 1,002,001회 기준, 1D가 2D보다 약 12% 빠르고, 명시적 인덱싱 루프가 zip/sum보다 약 7.5ms(약 14%) 더 빠릅니다.
 
-측정에 사용한 테스트 코드(`main.py`와 같은 디렉터리에서 실행):
+**메모리 측정**
 
-```python
+| 항목 | 값 |
+|---|---|
+| 2D 그리드 3개(list) | 25.39 MB |
+| list[float] 1개(컨테이너만) | 8.06 MB |
+| array('d') 1개(원소 포함) | 7.64 MB |
+
+그리드 3개(pattern+cross_filter+x_filter)를 동시에 들면 약 25MB. `array`가 `list`보다 컨테이너 자체는 살짝 작지만, `list`의 진짜 비용은 원소 하나하나가 별도 float 객체(24바이트)라는 점에 있어서 실질 절감 효과는 원소 개수(N²)가 커질수록 커집니다.
+```code
 import sys, time, array, tracemalloc
 from main import (
     generate_cross_pattern, generate_x_pattern,
@@ -121,9 +132,9 @@ mac_score_flat(flat_p, flat_c)
 t1 = time.perf_counter_ns()
 print(f"1D mac_score_flat 1회: {(t1 - t0) / 1_000_000:.2f} ms")
 
-avg2d = avg_mac_time(pattern, cross_filter, 3, mac_score)
-avg1d = avg_mac_time(flat_p, flat_c, 3, mac_score_flat)
-print(f"2D 평균(3회): {avg2d:.2f} ms, 1D 평균(3회): {avg1d:.2f} ms, "
+avg2d = avg_mac_time(pattern, cross_filter, 10, mac_score)
+avg1d = avg_mac_time(flat_p, flat_c, 10, mac_score_flat)
+print(f"2D 평균(10회): {avg2d:.2f} ms, 1D 평균(10회): {avg1d:.2f} ms, "
       f"개선율: {(avg2d - avg1d) / avg2d * 100:.1f}%")
 print(f"연산 횟수(N²): {n * n:,}")
 
