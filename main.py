@@ -97,13 +97,14 @@ def avg_mac_time(pattern, filter, repeat, score_fn=mac_score):
     mac 연산을 repeat회 반복 측정하여 평균시간을 ms단위로 반환
     순수 함수호출만 감싼다
     """
-    total_ms = 0.0
+    total_ns = 0
     for i in range(repeat):
-        start_time = time.perf_counter()
+        start_time = time.perf_counter_ns()
         score_fn(pattern,filter)
-        end_time = time.perf_counter() # nano second로 나오기 때문에 1000을 곱해 ms로 만듬
-        total_ms = total_ms + (end_time-start_time)*1000        
-    return total_ms/repeat
+        end_time = time.perf_counter_ns() # 정수 나노초라 부동소수점 오차 없이 정밀하게 누적 가능
+        total_ns = total_ns + (end_time-start_time)
+    avg_ns = total_ns/repeat
+    return avg_ns/1_000_000 # ns -> ms
 
 def print_grid(grid, label):
     print(f"{label} 메모리에 저장 완료")
@@ -236,8 +237,17 @@ def compare_2d_1d_optimization(nor_patterns,nor_filters,repeat=10):
         if size_key in seen:
             continue
         seen.add(size_key)
+
+        # 필터가 없는 크기(데이터/스키마 문제)는 비교 대상에서 제외
+        if size_key not in nor_filters:
+            continue
+
         input_data = p_data["input"]
         cross_filter = nor_filters[size_key]["Cross"]
+
+        # 패턴과 필터의 크기가 다르면 마찬가지로 제외
+        if len(input_data)!=len(cross_filter) or len(input_data[0])!=len(cross_filter[0]):
+            continue
 
         time_2d = avg_mac_time(input_data,cross_filter,repeat,mac_score)
 
