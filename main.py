@@ -74,7 +74,7 @@ def make_grid_from_input(n:int, label:str)->list[list]:
             return rows
 
 import time
-def avg_mac_time(pattern, filter, repeat):
+def avg_mac_time(pattern, filter, repeat, score_fn=mac_score):
     """
     mac 연산을 repeat회 반복 측정하여 평균시간을 ms단위로 반환
     순수 함수호출만 감싼다
@@ -82,7 +82,7 @@ def avg_mac_time(pattern, filter, repeat):
     total_ms = 0.0
     for i in range(repeat):
         start_time = time.perf_counter()
-        mac_score(pattern,filter)
+        score_fn(pattern,filter)
         end_time = time.perf_counter() # nano second로 나오기 때문에 1000을 곱해 ms로 만듬
         total_ms = total_ms + (end_time-start_time)*1000        
     return total_ms/repeat
@@ -118,7 +118,7 @@ def mode1_run():
 
     print(f"A점수: {score_a}")
     print(f"B점수: {score_b}")
-    print(f"연산 시간(평균/{repeat}회): {avg_ms:.2f} ms")
+    print(f"연산 시간(평균/{repeat}회): {avg_ms:.4f} ms")
     diff = abs(score_a - score_b)
     if diff <= EPSILON: # 동일한 경우는 당연히 오차보다 더 작을것이다
         msg = "판정불가 (|A-B|<1e-9)"
@@ -159,6 +159,44 @@ def size_number(size_key):
 
 def mean(values:list[float])->float:
     return sum(values)/len(values)
+
+def grid2flat(grid:list[list])->list[float]:
+    """
+    2차원 배열을 받으면 1차원 배열로 변환하여 리턴한다
+    """
+    n = len(grid)
+    return [ get_cell(grid,row,col) for row in range(n) for col in range(n) ]
+
+def mac_score_flat(pattern_flat:list[float],filter_flat:list[float])->float:
+    """
+    flat(ten) 1차원으로 펼쳐진 패턴과 필터를 곱하고 더한다
+    """
+    total = 0.0
+    for i in range(len(pattern_flat)):
+        total = total + pattern_flat[i]*filter_flat[i]
+    return total
+
+def compare_2d_1d_optimization(nor_patterns,nor_filters,repeat=10):
+    print(f"{'크기':<8}{'2D 평균(ms)':>13}{'1D 평균(ms)':>13}{'개선비율':>6}")
+    seen = set()
+    for p_name,p_data in nor_patterns.items():
+        size_key = "_".join(p_name.split('_')[:2])
+        if size_key in seen:
+            continue
+        seen.add(size_key)
+        input_data = p_data["input"]
+        cross_filter = nor_filters[size_key]["Cross"]
+
+        time_2d = avg_mac_time(input_data,cross_filter,repeat,mac_score)
+
+        flat_pattern = grid2flat(input_data)
+        flat_filter = grid2flat(cross_filter)
+        time_1d = avg_mac_time(flat_pattern,flat_filter,repeat,mac_score_flat)
+
+        improve = (time_2d-time_1d)/time_2d*100
+        n = len(input_data)
+        shape = f"{n}x{n}"
+        print(f"{shape:<10}{time_2d:>15.4f}{time_1d:>15.4f}{improve:>9.1f}%")
 
 def mode2_run():
     data = load()
@@ -219,10 +257,8 @@ def mode2_run():
         s_cross = mac_score(input_data, cross_filter)
         s_x = mac_score(input_data, x_filter)
 
-        # 두 필터에 대한 평균 시간 측정
-        avg_cross_ms = avg_mac_time(input_data, cross_filter, 10)
-        avg_x_ms = avg_mac_time(input_data, x_filter, 10)
-        avg_ms = (avg_cross_ms+avg_x_ms)/2
+        # 연산 시간 측정
+        avg_ms = avg_mac_time(input_data, cross_filter, 10)
 
         row = len(input_data)
         col = len(input_data[0])
@@ -272,16 +308,14 @@ def mode2_run():
     print(f"{'크기':<8}{'평균 시간(ms)':>11}{'연산 횟수':>8}")
     print(f"#{'-'*40}")
 
-
-
     for size_key in sorted(perf_log.keys(), key=size_number):
         shape = perf_log[size_key]["shape"]
         avg_time = mean(perf_log[size_key]["elapsedtimes"])
         op_count = perf_log[size_key]["op_count"]
+        print(f"{shape:<10}{avg_time:>15.4f}{op_count:>12}")
 
-        print(f"{shape:<10}{avg_time:>15.3f}{op_count:>12}")
-
-
+    print()
+    compare_2d_1d_optimization(nor_patterns,nor_filters)
     #---------------------------------------
     # [4] 결과 요약
     #---------------------------------------
