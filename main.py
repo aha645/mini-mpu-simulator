@@ -11,6 +11,23 @@ def set_cell(grid:list[list[float]],row:int,col:int,value:float):
 def get_cell(grid:list[list[float]],row:int,col:int)->float:
     return grid[row][col]
 
+def generate_cross_pattern(n:int, on=1.0, off=0.0)->list[list[float]]:
+    """N×N 십자가(Cross) 패턴을 생성한다: 가운데 행·열만 on, 나머지는 off"""
+    grid = create_grid(n, off)
+    mid = n // 2
+    for i in range(n):
+        set_cell(grid, mid, i, on)
+        set_cell(grid, i, mid, on)
+    return grid
+
+def generate_x_pattern(n:int, on=1.0, off=0.0)->list[list[float]]:
+    """N×N X 패턴을 생성한다: 두 대각선만 on, 나머지는 off"""
+    grid = create_grid(n, off)
+    for i in range(n):
+        set_cell(grid, i, i, on)
+        set_cell(grid, i, n-1-i, on)
+    return grid
+
 def mac_score(pattern:list[list[int]], filter:list[list[int]])->float:
     """
     입력패턴과 필터를 위치별로 곱하고 모두 더한다
@@ -99,15 +116,39 @@ def mode1_run():
     print(f"#{'-'*40}")
     print("# [1] 필터 입력")
     print(f"#{'-'*40}")
-    filter_a = make_grid_from_input(3,"필터 A")
-    print_grid(filter_a,"필터 A")
-    filter_b = make_grid_from_input(3,"필터 B")
-    print_grid(filter_b,"필터 B")
+    choice = input("입력 방식 선택 (1: 직접 입력 3x3, 2: 자동 생성 NxN): ").strip()
 
-    print(f"#{'-'*40}")
-    print("#[2] 패턴 입력")
-    print(f"#{'-'*40}")
-    pattern = make_grid_from_input(3,"패턴")
+    if choice == "2":
+        while True:
+            raw_n = input("생성할 크기 N 입력(홀수만 가능): ").strip()
+            try:
+                n = int(raw_n)
+            except ValueError:
+                print(f"입력형식오류: {raw_n} -> 정수로 변환할 수 없습니다.")
+                continue
+            if n % 2 == 1:
+                break
+            print("입력형식오류: N은 홀수여야 정확한 가운데를 잡을 수 있습니다.")
+        filter_a = generate_cross_pattern(n)
+        filter_b = generate_x_pattern(n)
+        print_grid(filter_a, "필터 A(자동 생성 Cross)")
+        print_grid(filter_b, "필터 B(자동 생성 X)")
+
+        print(f"#{'-'*40}")
+        print("#[2] 패턴 입력")
+        print(f"#{'-'*40}")
+        pattern = generate_cross_pattern(n)
+        print_grid(pattern, "패턴(자동 생성 Cross)")
+    else:
+        filter_a = make_grid_from_input(3,"필터 A")
+        print_grid(filter_a,"필터 A")
+        filter_b = make_grid_from_input(3,"필터 B")
+        print_grid(filter_b,"필터 B")
+
+        print(f"#{'-'*40}")
+        print("#[2] 패턴 입력")
+        print(f"#{'-'*40}")
+        pattern = make_grid_from_input(3,"패턴")
 
     print(f"#{'-'*40}")
     print("[3] MAC 결과")
@@ -120,7 +161,7 @@ def mode1_run():
     print(f"B점수: {score_b}")
     print(f"연산 시간(평균/{repeat}회): {avg_ms:.4f} ms")
     diff = abs(score_a - score_b)
-    if diff <= EPSILON: # 동일한 경우는 당연히 오차보다 더 작을것이다
+    if diff < EPSILON: # 동일한 경우는 당연히 오차보다 더 작을것이다
         msg = "판정불가 (|A-B|<1e-9)"
     else: # 오차값 보다 작거나 같지 않은 경우
         if score_a > score_b:
