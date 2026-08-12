@@ -29,7 +29,7 @@ def generate_x_pattern(n:int, on=1.0, off=0.0)->list[list[float]]:
         set_cell(grid, i, n-1-i, on)
     return grid
 
-def mac_score(pattern:list[list[int]], filter:list[list[int]])->float:
+def mac_score(pattern:list[list[float]], filter:list[list[float]])->float:
     """
     입력패턴과 필터를 위치별로 곱하고 모두 더한다
     """
@@ -79,7 +79,7 @@ def try_make_grid_from_input(n:int)->list[list[float]]:
             return None
     return grid
 
-def make_grid_from_input(n:int, label:str)->list[list]:
+def make_grid_from_input(n:int, label:str)->list[list[float]]:
     """
     n줄을 입력받아 nxn 2차원 리스트로 만듬
     각 줄은 공백으로 구분된 n개의 숫자여야 한다.
